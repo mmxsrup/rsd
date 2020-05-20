@@ -416,13 +416,13 @@ endmodule : DCacheArrayPortMultiplexer
 //
 module DCacheArray(DCacheIF.DCacheArray port);
     // Data array signals
-    logic dataArrayWE[DCACHE_ARRAY_PORT_NUM];
-    logic dataArrayByteWE[DCACHE_LINE_BYTE_NUM][DCACHE_ARRAY_PORT_NUM];
+    logic dataArrayWE[DCACHE_WAY_NUM][DCACHE_ARRAY_PORT_NUM];
+    logic dataArrayByteWE[DCACHE_LINE_BYTE_NUM][DCACHE_WAY_NUM][DCACHE_ARRAY_PORT_NUM];
     DCacheIndexPath dataArrayIndex[DCACHE_ARRAY_PORT_NUM];
     BytePath        dataArrayIn[DCACHE_LINE_BYTE_NUM][DCACHE_ARRAY_PORT_NUM];
-    BytePath        dataArrayOut[DCACHE_LINE_BYTE_NUM][DCACHE_ARRAY_PORT_NUM];
+    BytePath        dataArrayOut[DCACHE_LINE_BYTE_NUM][DCACHE_WAY_NUM][DCACHE_ARRAY_PORT_NUM];
     logic           dataArrayDirtyIn[DCACHE_ARRAY_PORT_NUM];
-    logic           dataArrayDirtyOut[DCACHE_ARRAY_PORT_NUM];
+    logic           dataArrayDirtyOut[DCACHE_WAY_NUM][DCACHE_ARRAY_PORT_NUM];
 
     // *** Hack for Synplify...
     DCacheByteEnablePath dataArrayByteWE_Tmp[DCACHE_ARRAY_PORT_NUM];
@@ -430,13 +430,16 @@ module DCacheArray(DCacheIF.DCacheArray port);
     DCacheLinePath dataArrayOutTmp[DCACHE_ARRAY_PORT_NUM];
 
     // Tag array signals
-    logic tagArrayWE[DCACHE_ARRAY_PORT_NUM];
+    logic tagArrayWE[DCACHE_WAY_NUM][DCACHE_ARRAY_PORT_NUM];
     DCacheIndexPath tagArrayIndex[DCACHE_ARRAY_PORT_NUM];
     DCacheTagValidPath tagArrayIn[DCACHE_ARRAY_PORT_NUM];
-    DCacheTagValidPath tagArrayOut[DCACHE_ARRAY_PORT_NUM];
+    DCacheTagValidPath tagArrayOut[DCACHE_WAY_NUM][DCACHE_ARRAY_PORT_NUM];
 
     // Reset signals
     DCacheIndexPath rstIndex;
+
+    DCacheWayPath hitWay;
+    DCacheWayPath wayToEvict;
 
     always_ff @(posedge port.clk) begin
         if (port.rstStart)
@@ -447,58 +450,76 @@ module DCacheArray(DCacheIF.DCacheArray port);
 
 
     generate
-        // Data array instance
-        for (genvar i = 0; i < DCACHE_LINE_BYTE_NUM; i++) begin
+        for (genvar way = 0; way < DCACHE_WAY_NUM; way++) begin
+            // Data array instance
+            for (genvar i = 0; i < DCACHE_LINE_BYTE_NUM; i++) begin
+                BlockTrueDualPortRAM #(
+                    .ENTRY_NUM( DCACHE_INDEX_NUM ),
+                    .ENTRY_BIT_SIZE( $bits(BytePath) )
+                    //.PORT_NUM( DCACHE_ARRAY_PORT_NUM )
+                ) dataArray (
+                    .clk( port.clk ),
+                    .we( dataArrayByteWE[i][way] ),
+                    .rwa( dataArrayIndex ),
+                    .wv( dataArrayIn[i] ),
+                    .rv( dataArrayOut[i][way] )
+                );
+            end
+
+            // Dirty array instance
+            // The dirty array is synchronized with the data array.
             BlockTrueDualPortRAM #(
                 .ENTRY_NUM( DCACHE_INDEX_NUM ),
-                .ENTRY_BIT_SIZE( $bits(BytePath) )
+                .ENTRY_BIT_SIZE( 1 )
                 //.PORT_NUM( DCACHE_ARRAY_PORT_NUM )
-            ) dataArray (
+            ) dirtyArray (
                 .clk( port.clk ),
-                .we( dataArrayByteWE[i] ),
+                .we( dataArrayWE[way] ),
                 .rwa( dataArrayIndex ),
-                .wv( dataArrayIn[i] ),
-                .rv( dataArrayOut[i] )
+                .wv( dataArrayDirtyIn ),
+                .rv( dataArrayDirtyOut[way] )
+            );
+
+            // Tag array instance
+            BlockTrueDualPortRAM #(
+                .ENTRY_NUM( DCACHE_INDEX_NUM ),
+                .ENTRY_BIT_SIZE( $bits(DCacheTagValidPath) )
+                //.PORT_NUM( DCACHE_ARRAY_PORT_NUM )
+            ) tagArray (
+                .clk( port.clk ),
+                .we( tagArrayWE[way] ),
+                .rwa( tagArrayIndex ),
+                .wv( tagArrayIn ),
+                .rv( tagArrayOut[way] )
             );
         end
-
-        // Dirty array instance
-        // The dirty array is synchronized with the data array.
-        BlockTrueDualPortRAM #(
-            .ENTRY_NUM( DCACHE_INDEX_NUM ),
-            .ENTRY_BIT_SIZE( 1 )
-            //.PORT_NUM( DCACHE_ARRAY_PORT_NUM )
-        ) dirtyArray (
-            .clk( port.clk ),
-            .we( dataArrayWE ),
-            .rwa( dataArrayIndex ),
-            .wv( dataArrayDirtyIn ),
-            .rv( dataArrayDirtyOut )
-        );
-
-        // Tag array instance
-        BlockTrueDualPortRAM #(
-            .ENTRY_NUM( DCACHE_INDEX_NUM ),
-            .ENTRY_BIT_SIZE( $bits(DCacheTagValidPath) )
-            //.PORT_NUM( DCACHE_ARRAY_PORT_NUM )
-        ) tagArray (
-            .clk( port.clk ),
-            .we( tagArrayWE ),
-            .rwa( tagArrayIndex ),
-            .wv( tagArrayIn ),
-            .rv( tagArrayOut )
-        );
-
     endgenerate
 
 
     always_comb begin
 
+        // Check cache hit
+        for (int p = 0; p < DCACHE_ARRAY_PORT_NUM; p++) begin
+            hitWay[p] = '0;
+            // Detect which way is hit
+            for (int way = 0; way < DCACHE_WAY_NUM; way++) begin
+                if (tagArrayOut[way][p].valid && tagArrayOut[way][p].tag == port.tagArrayDataIn[p]) begin
+                    hitWay[p] = way;
+                    break;
+                end
+            end
+        end
+
+        for (int p = 0; p < DCACHE_ARRAY_PORT_NUM; p++) begin
+            wayToEvict[p] = '0;
+        end
+
+
         // Data array signals
         for (int p = 0; p < DCACHE_ARRAY_PORT_NUM; p++) begin
             dataArrayIndex[p] = port.dataArrayIndexIn[p];
             dataArrayDirtyIn[p] = port.dataArrayDirtyIn[p];
-            dataArrayWE[p] = port.dataArrayWE[p];
+            dataArrayWE[wayToEvict[p]][p] = port.dataArrayWE[p];
         end
 
         // *** Hack for Synplify...
@@ -509,50 +530,62 @@ module DCacheArray(DCacheIF.DCacheArray port);
 
         for (int p = 0; p < DCACHE_ARRAY_PORT_NUM; p++) begin
             for (int i = 0; i < DCACHE_LINE_BYTE_NUM; i++) begin
-                dataArrayByteWE[i][p] = port.dataArrayWE[p] && dataArrayByteWE_Tmp[p][i];
+                dataArrayByteWE[i][wayToEvict[p]][p] = port.dataArrayWE[p] && dataArrayByteWE_Tmp[p][i];
                 for (int b = 0; b < 8; b++) begin
                     dataArrayIn[i][p][b] = dataArrayInTmp[p][i*8 + b];
-                    dataArrayOutTmp[p][i*8 + b] = dataArrayOut[i][p][b];
+                    dataArrayOutTmp[p][i*8 + b] = dataArrayOut[i][hitWay[p]][p][b];
                 end
             end
         end
 
         port.dataArrayDataOut = dataArrayOutTmp;
-        port.dataArrayDirtyOut = dataArrayDirtyOut;
+        for (int p = 0; p < DCACHE_ARRAY_PORT_NUM; p++) begin
+            port.dataArrayDirtyOut[p] = dataArrayDirtyOut[hitWay[p]][p];
+        end
 
 
         // Tag signals
         for (int p = 0; p < DCACHE_ARRAY_PORT_NUM; p++) begin
             tagArrayIndex[p]    = port.tagArrayIndexIn[p];
-            tagArrayWE[p]       = port.tagArrayWE[p];
+            tagArrayWE[wayToEvict[p]][p]       = port.tagArrayWE[p];
             tagArrayIn[p].tag   = port.tagArrayDataIn[p];
             tagArrayIn[p].valid = port.tagArrayValidIn[p];
 
-            port.tagArrayDataOut[p]  = tagArrayOut[p].tag;
-            port.tagArrayValidOut[p] = tagArrayOut[p].valid;
+            port.tagArrayDataOut[p]  = tagArrayOut[hitWay[p]][p].tag;
+            port.tagArrayValidOut[p] = tagArrayOut[hitWay[p]][p].valid;
         end
 
 
         // Reset
         if (port.rst) begin
             for (int p = 0; p < DCACHE_ARRAY_PORT_NUM; p++) begin
-                for (int i = 0; i < DCACHE_LINE_BYTE_NUM; i++) begin
-                    dataArrayByteWE[i][p] = FALSE;
+                for (int way = 0; way < DCACHE_WAY_NUM; way++) begin
+                    for (int i = 0; i < DCACHE_LINE_BYTE_NUM; i++) begin
+                        dataArrayByteWE[i][way][p] = FALSE;
+                    end
+                    tagArrayWE[way][p] = FALSE;
                 end
-                tagArrayWE[p] = FALSE;
             end
 
             // Port 0 is used for reset.
             for (int i = 0; i < DCACHE_LINE_BYTE_NUM; i++) begin
-                dataArrayByteWE[i][0] = TRUE;
+                for (int way = 0; way < DCACHE_WAY_NUM; way++) begin
+                    dataArrayByteWE[i][way][0] = TRUE;
+                end
                 dataArrayIn[i][0] = 8'hcd;
             end
-            dataArrayWE[0] = TRUE;
+
+            for (int way = 0; way < DCACHE_WAY_NUM; way++) begin
+                dataArrayWE[way][0] = TRUE;
+            end
+
             dataArrayIndex[0] = rstIndex;
             dataArrayDirtyIn[0] = FALSE;
 
             tagArrayIndex[0] = rstIndex;
-            tagArrayWE[0] = TRUE;
+            for (int way = 0; way < DCACHE_WAY_NUM; way++) begin
+                tagArrayWE[way][0] = TRUE;
+            end
             tagArrayIn[0].tag = 0;
             tagArrayIn[0].valid = FALSE;
 

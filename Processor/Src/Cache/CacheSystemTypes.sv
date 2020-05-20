@@ -15,7 +15,8 @@ package CacheSystemTypes;
     // Main cache parameters.
     // The remaining cache parameters must be fixed or calculated by the following
     // parameters.
-    localparam DCACHE_INDEX_BIT_WIDTH = 9;   // The number of index bits 11:16B*1^11=32KB 9:16*1^9=8KB
+    localparam DCACHE_WAY_NUM = 2;           // Way Num
+    localparam DCACHE_INDEX_BIT_WIDTH = 9 - $clog2(DCACHE_WAY_NUM);   // The number of index bits 11:16B*1^11=32KB 9:16*1^9=8KB
     localparam DCACHE_LINE_BYTE_NUM = 8;    // Line size
     localparam MSHR_NUM = 2;                 // The nubmer of MSHR entries.
 
@@ -47,6 +48,9 @@ package CacheSystemTypes;
         logic valid;
         DCacheTagPath tag;
     } DCacheTagValidPath;
+
+    // Way bits
+    typedef logic [$clog2(DCACHE_WAY_NUM)-1:0] DCacheWayPath[DCACHE_ARRAY_PORT_NUM];
 
     // Subset of index for MSHR identifier in ReplayQueue
     // This value MUST be less than or equal to DCACHE_INDEX_BIT_WIDTH.
