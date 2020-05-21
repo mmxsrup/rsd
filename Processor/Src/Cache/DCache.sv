@@ -517,6 +517,9 @@ module DCacheArray(DCacheIF.DCacheArray port);
 
         // Data array signals
         for (int p = 0; p < DCACHE_ARRAY_PORT_NUM; p++) begin
+            for (int way = 0; way < DCACHE_WAY_NUM; way++) begin
+                dataArrayWE[way][p] = FALSE;
+            end
             dataArrayIndex[p] = port.dataArrayIndexIn[p];
             dataArrayDirtyIn[p] = port.dataArrayDirtyIn[p];
             dataArrayWE[wayToEvict[p]][p] = port.dataArrayWE[p];
@@ -530,6 +533,9 @@ module DCacheArray(DCacheIF.DCacheArray port);
 
         for (int p = 0; p < DCACHE_ARRAY_PORT_NUM; p++) begin
             for (int i = 0; i < DCACHE_LINE_BYTE_NUM; i++) begin
+                for (int way = 0; way < DCACHE_WAY_NUM; way++) begin
+                    dataArrayByteWE[i][way][p] = FALSE;
+                end
                 dataArrayByteWE[i][wayToEvict[p]][p] = port.dataArrayWE[p] && dataArrayByteWE_Tmp[p][i];
                 for (int b = 0; b < 8; b++) begin
                     dataArrayIn[i][p][b] = dataArrayInTmp[p][i*8 + b];
@@ -546,6 +552,9 @@ module DCacheArray(DCacheIF.DCacheArray port);
 
         // Tag signals
         for (int p = 0; p < DCACHE_ARRAY_PORT_NUM; p++) begin
+            for (int way = 0; way < DCACHE_WAY_NUM; way++) begin
+                tagArrayWE[way][p] = FALSE;
+            end
             tagArrayIndex[p]    = port.tagArrayIndexIn[p];
             tagArrayWE[wayToEvict[p]][p]       = port.tagArrayWE[p];
             tagArrayIn[p].tag   = port.tagArrayDataIn[p];
