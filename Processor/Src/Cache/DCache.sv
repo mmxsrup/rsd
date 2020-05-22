@@ -438,8 +438,8 @@ module DCacheArray(DCacheIF.DCacheArray port);
     // Reset signals
     DCacheIndexPath rstIndex;
 
-    DCacheWayPath hitWay;
-    DCacheWayPath wayToEvict;
+    DCacheWayPath hitWay[DCACHE_ARRAY_PORT_NUM];
+    DCacheWayPath wayToEvict[DCACHE_ARRAY_PORT_NUM];
 
     always_ff @(posedge port.clk) begin
         if (port.rstStart)

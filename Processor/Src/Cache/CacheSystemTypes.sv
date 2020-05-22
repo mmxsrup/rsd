@@ -50,7 +50,7 @@ package CacheSystemTypes;
     } DCacheTagValidPath;
 
     // Way bits
-    typedef logic [$clog2(DCACHE_WAY_NUM)-1:0] DCacheWayPath[DCACHE_ARRAY_PORT_NUM];
+    typedef logic [$clog2(DCACHE_WAY_NUM)-1:0] DCacheWayPath;
 
     // Subset of index for MSHR identifier in ReplayQueue
     // This value MUST be less than or equal to DCACHE_INDEX_BIT_WIDTH.
