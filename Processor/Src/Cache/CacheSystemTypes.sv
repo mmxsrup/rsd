@@ -134,7 +134,7 @@ package CacheSystemTypes;
         // A MSHR entry which has been allocated by store must integrate the store's data into a fetched cache line.
         logic isAllocatedByStore;
 
-        logic evictWay;
+        DCacheWayPath evictWay;
     } MissStatusHandlingRegister;
 
     typedef struct packed   // DCachePortMultiplexerIn
